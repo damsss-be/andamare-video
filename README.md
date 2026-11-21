@@ -7,7 +7,7 @@ La tâche 1 n'utilise pas ce dépôt : elle continue de fonctionner comme avant.
 ## Ce qu'il y a dedans
 - `studio/` : les outils de montage réutilisés à chaque vidéo (rendu image par image, cadrage vertical, mixage du son, planches, mesures, 3D). Mode d'emploi : `studio/README_studio.md`.
 - `studio/verifier.sh` : vérifie en 20 secondes que les outils marchent.
-- `.claude/skills/` : 70 skills publics sous licence libre (HyperFrames de HeyGen pour le montage pro, skills marketing de Corey Haines, video-use pour les vrais rushs). Liste et licences : `TIERS.md`.
+- `.claude/skills/` : 19 skills publics sous licence libre (7 HyperFrames de HeyGen pour le montage, 10 skills marketing de Corey Haines, 2 video-use pour les vrais rushs). Liste et licences : `TIERS.md`.
 - `CLAUDE.md` : les consignes que Claude lit automatiquement quand la tâche ouvre le dépôt.
 
 ## Ce qu'il n'y a pas dedans

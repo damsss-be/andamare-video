@@ -11,13 +11,12 @@ Ce dépôt sert à la tâche automatique 2 (essai) de la chaîne vidéo d'Andama
 ## Les skills du dépôt (.claude/skills/)
 Skills publics sous licence libre (voir `licences/` et `TIERS.md`), ajoutés le 21/11/2026 à la demande de Damien. Ce sont des sources de savoir-faire et d'inspiration : les règles de Damien, les instructions de la tâche et les fichiers de chaîne passent toujours avant eux. Quand un skill contredit une règle de Damien, la règle de Damien gagne, sans exception.
 
-Qui s'en sert (donne-leur les noms et le chemin `.claude/skills/<nom>/SKILL.md` quand tu les lances) :
-- **Idéateur** : `social` (scripts de vidéos courtes, accroches), `ad-creative` (angles, accroches), `marketing-psychology` (ce qui donne envie, honnêtement), `marketing-ideas`, `content-strategy`, `video` (vidéo marketing), `product-marketing`, `customer-research`, `launch`.
-- **Contrôleur et Critique** : les mêmes, pour juger l'accroche, l'angle et la clarté ; `copy-editing` pour les textes à l'écran ; la relecture de `hyperframes` (references/review.md) pour l'image.
-- **Metteur en scène-Monteur** : `hyperframes` (à lire en premier), `motion-doctrine`, `cut-the-curve`, `seam-craft` (enchaînements et courbes d'animation), `captions-overlay` (sous-titres), `hyperframes-registry` (effets, titres et transitions prêts à l'emploi), `hyperframes-cli`, `slideshow`, `oversized-cursor`, `manim-video` (schémas animés) ; `video-use` quand la matière contient de vrais rushs filmés (couper les blancs, sous-titres, étalonnage).
+Qui s'en sert (donne-leur les noms et le chemin `.claude/skills/<nom>/SKILL.md` quand tu les lances). ÉCONOMIE : un agent n'ouvre un skill que si la vidéo en a besoin, et pas plus de 3 par agent et par production.
+- **Idéateur** : `social` (scripts de vidéos courtes, accroches), `ad-creative` (angles), `marketing-psychology` (ce qui donne envie, honnêtement) ; au besoin `marketing-ideas`, `video`, `content-strategy`, `customer-research`, `product-marketing`.
+- **Contrôleur et Critique** : `ad-creative` pour juger l'accroche et l'angle ; `copy-editing` et `copywriting` pour les textes à l'écran.
+- **Metteur en scène-Monteur** : `hyperframes` (à lire en premier), `motion-doctrine` (enchaînements des plans), `hyperframes-registry` (effets, titres et transitions prêts à l'emploi) ; au besoin `captions-overlay` (sous-titres), `seam-craft` (flashs entre les plans), `manim-video` (schémas animés), `video-use` quand la matière contient de vrais rushs filmés.
 - **Agent son** : `media-use` (musique, bruitages, mixage — uniquement les outils gratuits et locaux).
-- **Conservateur / analyse des Références de style** : `reverse-any-video` et `style-sampling` servent ici UNIQUEMENT à analyser le rythme, le montage et la structure des vidéos de référence ; jamais à les reproduire ni à en intégrer un morceau (règle de Damien du 18/11/2026).
-- Les autres skills marketing (SEO, e-mails, prix, ventes, etc.) ne servent pas à la production vidéo ; ils restent là pour d'autres usages.
+- **Conservateur / analyse des Références de style** : `reverse-any-video` sert ici UNIQUEMENT à analyser le rythme, le montage et la structure des vidéos de référence ; jamais à les reproduire ni à en intégrer un morceau (règle de Damien du 18/11/2026).
 
 Réglages imposés par Damien pour HyperFrames et media-use :
 - Format : vertical 1080×1920, 30 i/s (HyperFrames démarre par défaut en 1920×1080 : toujours le changer).
