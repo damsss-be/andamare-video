@@ -21,3 +21,5 @@ Cle*.txt
 .env
 __pycache__/
 !studio/exemples/*
+# Les skills tiers gardent leurs images et exemples
+!.claude/skills/**

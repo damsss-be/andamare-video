@@ -8,8 +8,26 @@ Ce dépôt sert à la tâche automatique 2 (essai) de la chaîne vidéo d'Andama
 - Le studio fournit des outils, pas un style : il ne doit jamais imposer un visuel par défaut.
 - Clé Pixabay : uniquement depuis le fichier du PC « Pour Claude\Cle_Pixabay.txt », stagé dans la session. Ne jamais l'afficher, la recopier, ni la mettre dans le dépôt.
 
+## Les skills du dépôt (.claude/skills/)
+Skills publics sous licence libre (voir `licences/` et `TIERS.md`), ajoutés le 21/11/2026 à la demande de Damien. Ce sont des sources de savoir-faire et d'inspiration : les règles de Damien, les instructions de la tâche et les fichiers de chaîne passent toujours avant eux. Quand un skill contredit une règle de Damien, la règle de Damien gagne, sans exception.
+
+Qui s'en sert (donne-leur les noms et le chemin `.claude/skills/<nom>/SKILL.md` quand tu les lances) :
+- **Idéateur** : `social` (scripts de vidéos courtes, accroches), `ad-creative` (angles, accroches), `marketing-psychology` (ce qui donne envie, honnêtement), `marketing-ideas`, `content-strategy`, `video` (vidéo marketing), `product-marketing`, `customer-research`, `launch`.
+- **Contrôleur et Critique** : les mêmes, pour juger l'accroche, l'angle et la clarté ; `copy-editing` pour les textes à l'écran ; la relecture de `hyperframes` (references/review.md) pour l'image.
+- **Metteur en scène-Monteur** : `hyperframes` (à lire en premier), `motion-doctrine`, `cut-the-curve`, `seam-craft` (enchaînements et courbes d'animation), `captions-overlay` (sous-titres), `hyperframes-registry` (effets, titres et transitions prêts à l'emploi), `hyperframes-cli`, `slideshow`, `oversized-cursor`, `manim-video` (schémas animés) ; `video-use` quand la matière contient de vrais rushs filmés (couper les blancs, sous-titres, étalonnage).
+- **Agent son** : `media-use` (musique, bruitages, mixage — uniquement les outils gratuits et locaux).
+- **Conservateur / analyse des Références de style** : `reverse-any-video` et `style-sampling` servent ici UNIQUEMENT à analyser le rythme, le montage et la structure des vidéos de référence ; jamais à les reproduire ni à en intégrer un morceau (règle de Damien du 18/11/2026).
+- Les autres skills marketing (SEO, e-mails, prix, ventes, etc.) ne servent pas à la production vidéo ; ils restent là pour d'autres usages.
+
+Réglages imposés par Damien pour HyperFrames et media-use :
+- Format : vertical 1080×1920, 30 i/s (HyperFrames démarre par défaut en 1920×1080 : toujours le changer).
+- Pas de voix de synthèse (Damien, 11/11/2026) : aucune voix générée, aucun avatar. Une voix n'est utilisée que si Damien ou Andrew l'ont enregistrée dans « Claude - Matière ».
+- Aucune fonction payante, aucun compte HeyGen ni aucun autre service payant : ne jamais créer de compte, se connecter ni payer. Si une étape demande HeyGen, prendre l'alternative gratuite et locale que le skill indique, sinon s'en passer.
+- Pas d'aperçu à valider par Damien pendant la production (il n'est pas là) : le rendu final se fait après la relecture interne, puis la vidéo est livrée comme le prévoient les instructions de la tâche. Ne pas proposer l'application de bureau HyperFrames.
+- Si HyperFrames ne s'installe pas ou ne rend pas (outil `npx hyperframes`), repasser au studio (`studio/`) sans bloquer, et le signaler à la livraison.
+
 ## Ce qui n'entre jamais dans le dépôt
-Vidéos, images, sons, matière, catalogue, archives, clés, fichiers de travail d'une production (voir `.gitignore`). Le dépôt ne contient que du code et du texte.
+Vidéos, images, sons, matière, catalogue, archives, clés, fichiers de travail d'une production (voir `.gitignore`). Seule exception : les images et exemples fournis avec les skills tiers dans `.claude/skills/`.
 
 ## Faire grandir le studio
 Quand une production invente un outil réutilisable (effet, type de montage, générateur), et seulement après le « oui » de Damien sur la vidéo :
