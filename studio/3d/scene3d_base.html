@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Studio Andamare : base de scene 3D realiste (three.js + matieres Poly Haven).
+     A copier dans le dossier de travail, a cote de node_modules (npm install three@0.160) et de assets/.
+     Contrat pour studio.py rendre : window.ready=true une fois charge, window.frame(t) dessine l'instant t.
+     PIEGES DEJA RENCONTRES : (1) toujours un sol reel sous les objets, sinon ils flottent ; (2) exposition
+     entre 0.4 et 0.7, au-dela l'image est brulee et jaune ; (3) verifier sur une image que chaque objet est
+     pose (pas enfonce, pas en l'air) et a la bonne echelle ; (4) le fond flou de l'eclairage n'est pas un decor :
+     des que la camera descend ou tourne, il faut de vrais murs ou un vrai sol. -->
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body><script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {RGBELoader} from 'three/addons/loaders/RGBELoader.js';
+const L=innerWidth,H=innerHeight;
+export const rendu=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+rendu.setSize(L,H);rendu.setPixelRatio(1);rendu.toneMapping=THREE.ACESFilmicToneMapping;rendu.toneMappingExposure=.5;
+rendu.shadowMap.enabled=true;rendu.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(rendu.domElement);
+export const scene=new THREE.Scene();export const camera=new THREE.PerspectiveCamera(40,L/H,.05,80);
+const gltf=new GLTFLoader(),tex=new THREE.TextureLoader();
+// Eclairage d'ambiance (fichier .hdr de Poly Haven). fond=true : l'image sert aussi d'arriere-plan flou.
+export async function eclairage(hdr,{fond=true,flou=.04,intensite=.75}={}){
+  const e=await new RGBELoader().loadAsync(hdr);e.mapping=THREE.EquirectangularReflectionMapping;
+  scene.environment=e;if(fond){scene.background=e;scene.backgroundBlurriness=flou;scene.backgroundIntensity=intensite}}
+// Lumiere principale avec ombres douces.
+export function soleil({x=-2.2,y=3.2,z=1.6,couleur=0xfff1e0,force=1.6,zone=4}={}){
+  const s=new THREE.DirectionalLight(couleur,force);s.position.set(x,y,z);s.castShadow=true;
+  s.shadow.mapSize.set(2048,2048);s.shadow.radius=6;s.shadow.bias=-.0004;
+  Object.assign(s.shadow.camera,{left:-zone,right:zone,top:zone,bottom:-zone,near:.1,far:20});scene.add(s);return s}
+// Sol reel texture (dossier d'une texture Poly Haven : <nom>_Diffuse.jpg, _nor_gl.jpg, _Rough.jpg).
+export async function sol(dossier,nom,{taille=12,repetition=6}={}){
+  const c=async f=>{const t=await tex.loadAsync(`${dossier}/${nom}_${f}.jpg`);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(repetition,repetition);return t};
+  const [d,n,r]=await Promise.all(['Diffuse','nor_gl','Rough'].map(c));d.colorSpace=THREE.SRGBColorSpace;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(taille,taille),new THREE.MeshStandardMaterial({map:d,normalMap:n,roughnessMap:r}));
+  m.rotation.x=-Math.PI/2;m.receiveShadow=true;scene.add(m);return m}
+// Mur uni (a placer derriere la scene quand on ne veut pas du fond flou).
+export function mur({z=-2,largeur=12,hauteur=5,couleur=0xe9e2d6}={}){
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(largeur,hauteur),new THREE.MeshStandardMaterial({color:couleur,roughness:.95}));
+  m.position.set(0,hauteur/2,z);m.receiveShadow=true;scene.add(m);return m}
+// Charger un modele Poly Haven (assets/<nom>/<nom>.gltf) ; hauteur (m) le remet a l'echelle voulue.
+export async function modele(nom,{hauteur}={}){
+  const o=(await gltf.loadAsync(`assets/${nom}/${nom}.gltf`)).scene;
+  o.traverse(m=>{if(m.isMesh){m.castShadow=m.receiveShadow=true}});
+  if(hauteur){const b=boite(o);o.scale.setScalar(hauteur/(b.max.y-b.min.y))}scene.add(o);return o}
+export const boite=o=>new THREE.Box3().setFromObject(o);
+// Poser un objet sur le sol (y=0) ou sur un autre objet, a la position x,z.
+export function poser(o,{x=0,z=0,sur}={}){
+  const base=sur?boite(sur).max.y:0;o.position.set(x,0,z);o.position.y=base-boite(o).min.y;return o}
+// Image plane (photo de produit detouree, affiche, ecran) dans la scene.
+export async function image(fichier,{largeur=.4}={}){
+  const t=await tex.loadAsync(fichier);t.colorSpace=THREE.SRGBColorSpace;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(largeur,largeur*t.image.height/t.image.width),new THREE.MeshStandardMaterial({map:t,transparent:true,roughness:.6}));
+  m.castShadow=true;scene.add(m);return m}
+// Courbes d'animation.
+export const lisse=x=>{x=Math.min(1,Math.max(0,x));return 1-Math.pow(1-x,3)};
+export const rebond=x=>{x=Math.min(1,Math.max(0,x));const n=7.5625,d=2.75;if(x<1/d)return n*x*x;if(x<2/d)return n*(x-=1.5/d)*x+.75;if(x<2.5/d)return n*(x-=2.25/d)*x+.9375;return n*(x-=2.625/d)*x+.984375};
+
+// ===================== LA SCENE (a remplacer) =====================
+await eclairage('assets/lythwood_lounge_1k.hdr');soleil();
+await sol('assets/wood_floor_deck','wood_floor_deck');
+const table=poser(await modele('WoodenTable_01'));
+const colis=poser(await modele('cardboard_box_01'),{sur:table,x:-.1});
+const haut=boite(table).max.y,y0=colis.position.y;
+window.frame=t=>{
+  colis.position.y=y0+(1-rebond((t-.25)/.9))*1.1;
+  const c=lisse(t/3);camera.position.set(1.6-.5*c,haut+.75-.1*c,2.9-.45*c);camera.lookAt(0,haut+.1,0);
+  rendu.render(scene,camera)};
+window.frame(0);window.ready=true;
+</script></body></html>

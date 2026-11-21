@@ -1,0 +1,315 @@
+<!--
+MOTEUR 3D LOW-POLY ANDAMARE (exemple complet, 23-24/10/2026) — vraie 3D WebGL2, sans bibliothèque externe.
+Usage : ouvrir dans Chromium headless (Playwright) avec --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader,
+viewport 1080×1920, puis pour chaque image : page.evaluate('renderAt(t)') et capture (~1 s par image).
+Briques : box(w,h,d), cyl(rHaut,rBas,h,segments), ico(rayon,subdiv,irrégularité,graine) = formes à facettes ;
+node(parent, géométrie, couleur, matrice, émissif, porte_ombre) = graphe de scène ; M.tr / M.ry / M.sc = transformations ;
+character({...}) = personnage low-poly (tête, yeux, bouche animée, bras articulés, cheveux) ; draw(œil, cible, fov) = rendu
+avec soleil + ombres (ortho) ; CAM = images clés de caméra ; LINES = sous-titres ; ENV/ENVA = enveloppes de voix (bouches).
+Cet exemple : deux personnages à une table d'emballage dans un entrepôt de jour (racks, cartons, palettes), Time Timer.
+Pour une nouvelle vidéo : garder les briques, remplacer le décor, les personnages, CAM, LINES et l'écran de fin.
+-->
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:#0b1430;font-family:'Inter',sans-serif}
+#c{position:absolute;left:0;top:0;width:1080px;height:1920px}
+#sub{position:absolute;left:50%;top:215px;transform:translateX(-50%);max-width:880px;text-align:center;
+ color:#fff;font:600 54px/1.25 'Inter';padding:18px 34px;border-radius:22px;background:rgba(10,14,32,.74);
+ opacity:0;white-space:normal}
+#who{display:block;font:700 30px 'Inter';letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+#cap{position:absolute;left:50%;top:1340px;transform:translateX(-50%);background:#0D2A44;color:#fff;
+ font:600 34px 'Inter';padding:14px 30px;border-radius:40px;white-space:nowrap;opacity:0;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+#cap b{color:#E7AC4D;font-weight:700}
+#end{position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,#14406a 0%,#0D2A44 55%,#081a2c 100%);opacity:0;
+ display:flex;flex-direction:column;align-items:center;justify-content:center}
+#end .name{font:700 96px 'DejaVu Serif';color:#fff;margin-top:40px}
+#end .slo{font:500 46px/1.35 'Inter';color:#fff;text-align:center;margin-top:30px}
+#end .slo span{color:#E7AC4D;font-weight:700}
+#end .url{margin-top:56px;background:#E7AC4D;color:#0D2A44;font:800 44px 'Inter';padding:16px 44px;border-radius:50px}
+#end .msg{font:700 64px/1.2 'Inter Display';color:#fff;text-align:center;margin-bottom:110px}
+#end .msg em{font-style:normal;color:#E7AC4D}
+</style></head><body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="sub"><span id="who"></span><span id="txt"></span></div>
+<div id="cap">Time Timer Original Medium · <b>TimeTimer</b></div>
+<div id="end">
+ <div class="msg" id="msg">Ce n'est pas à vous<br>de vous adapter.<br><em>C'est nous.</em></div>
+ <svg id="logo" width="260" height="260" viewBox="0 0 100 100">
+  <rect x="2" y="2" width="96" height="96" rx="24" fill="#0F7D72"/>
+  <path d="M33 80 L50 43 L67 80" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19 41 Q50 63 81 41" fill="none" stroke="#E7AC4D" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="50" cy="28" r="7.5" fill="#E7AC4D"/>
+ </svg>
+ <div class="name">Andamare</div>
+ <div class="slo">avec nous en Belgique,<br><span>tout à portée d'un clic</span></div>
+ <div class="url">andamare.be</div>
+</div>
+<script>
+// ---------- math ----------
+const M={
+ id(){return[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+ mul(a,b){const o=new Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s}return o},
+ tr(x,y,z){const m=M.id();m[12]=x;m[13]=y;m[14]=z;return m},
+ sc(x,y,z){const m=M.id();m[0]=x;m[5]=y;m[10]=z;return m},
+ rx(a){const c=Math.cos(a),s=Math.sin(a);return[1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1]},
+ ry(a){const c=Math.cos(a),s=Math.sin(a);return[c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]},
+ rz(a){const c=Math.cos(a),s=Math.sin(a);return[c,s,0,0,-s,c,0,0,0,0,1,0,0,0,0,1]},
+ persp(f,a,n,fa){const t=1/Math.tan(f/2);return[t/a,0,0,0,0,t,0,0,0,0,(fa+n)/(n-fa),-1,0,0,2*fa*n/(n-fa),0]},
+ look(e,c,u){let z=[e[0]-c[0],e[1]-c[1],e[2]-c[2]];let l=Math.hypot(...z);z=z.map(v=>v/l);
+  let x=[u[1]*z[2]-u[2]*z[1],u[2]*z[0]-u[0]*z[2],u[0]*z[1]-u[1]*z[0]];l=Math.hypot(...x);x=x.map(v=>v/l);
+  const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
+  return[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]),-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]),-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]),1]},
+ ortho(l,r,b,t,n,f){return[2/(r-l),0,0,0,0,2/(t-b),0,0,0,0,-2/(f-n),0,-(r+l)/(r-l),-(t+b)/(t-b),-(f+n)/(f-n),1]}
+};
+function rng(seed){let s=seed;return()=>{s=(s*16807)%2147483647;return(s-1)/2147483646}}
+const hex=h=>[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255];
+// ---------- geometry (non indexed triangles) ----------
+function box(w,h,d){const x=w/2,y=h/2,z=d/2;const P=[[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z],[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z]];
+ const F=[[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];const o=[];for(const f of F){o.push(...P[f[0]],...P[f[1]],...P[f[2]],...P[f[0]],...P[f[2]],...P[f[3]])}return o}
+function cyl(rt,rb,h,seg,cap=true,a0=0){const o=[];for(let i=0;i<seg;i++){const a=a0+i/seg*Math.PI*2,b=a0+(i+1)/seg*Math.PI*2;
+ const p1=[Math.cos(a)*rb,-h/2,Math.sin(a)*rb],p2=[Math.cos(b)*rb,-h/2,Math.sin(b)*rb],p3=[Math.cos(b)*rt,h/2,Math.sin(b)*rt],p4=[Math.cos(a)*rt,h/2,Math.sin(a)*rt];
+ o.push(...p1,...p3,...p2,...p1,...p4,...p3);
+ if(cap){o.push(0,h/2,0,...p3,...p4);o.push(0,-h/2,0,...p1,...p2)}}return o}
+function ico(r,sub,jit,seed){const t=(1+Math.sqrt(5))/2;let V=[[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(v=>{const l=Math.hypot(...v);return v.map(x=>x/l)});
+ let F=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+ for(let s=0;s<sub;s++){const cache={};const mid=(a,b)=>{const k=a<b?a+'_'+b:b+'_'+a;if(cache[k]!=null)return cache[k];const v=[0,1,2].map(i=>(V[a][i]+V[b][i])/2);const l=Math.hypot(...v);V.push(v.map(x=>x/l));return cache[k]=V.length-1};
+  const nf=[];for(const[a,b,c]of F){const ab=mid(a,b),bc=mid(b,c),ca=mid(c,a);nf.push([a,ab,ca],[b,bc,ab],[c,ca,bc],[ab,bc,ca])}F=nf}
+ const R=rng(seed);V=V.map(v=>{const k=r*(1+(R()-.5)*jit);return v.map(x=>x*k)});const o=[];for(const[a,b,c]of F)o.push(...V[a],...V[c],...V[b]);return o}
+function sector(r,ang,seg){const o=[];const n=Math.max(1,Math.ceil(seg*ang/(Math.PI*2)));for(let i=0;i<n;i++){const a=-Math.PI/2+i/n*ang,b=-Math.PI/2+(i+1)/n*ang;
+ o.push(0,0,0,Math.cos(b)*r,-Math.sin(b)*r,0,Math.cos(a)*r,-Math.sin(a)*r,0)}return o}
+// ---------- GL ----------
+const cv=document.getElementById('c');const gl=cv.getContext('webgl2',{antialias:true,preserveDrawingBuffer:true});
+gl.getExtension('OES_standard_derivatives');
+function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(x);return x}
+function prog(v,f){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw gl.getProgramInfoLog(p);return p}
+const VS=`#version 300 es
+in vec3 p;uniform mat4 uM,uV,uP,uL;out vec3 wp;out vec4 lp;void main(){vec4 w=uM*vec4(p,1.);wp=w.xyz;lp=uL*w;gl_Position=uP*uV*w;}`;
+const FS=`#version 300 es
+precision highp float;in vec3 wp;in vec4 lp;uniform vec3 uCol,uEye,uSun;uniform float uEm;uniform sampler2D uSh;out vec4 o;
+float shadow(){vec3 c=lp.xyz/lp.w*.5+.5;if(c.x<0.||c.x>1.||c.y<0.||c.y>1.||c.z>1.)return 1.;float s=0.;vec2 tx=1./vec2(2048.);
+ for(int i=-1;i<=1;i++)for(int j=-1;j<=1;j++){float d=texture(uSh,c.xy+vec2(i,j)*tx).r;s+=c.z-0.0018>d?0.:1.;}return s/9.;}
+void main(){vec3 n=normalize(cross(dFdx(wp),dFdy(wp)));if(dot(n,uEye-wp)<0.)n=-n;
+ vec3 S=normalize(uSun);float sun=max(dot(n,S),0.)*shadow();
+ vec3 c=uCol*(vec3(1.,.95,.84)*sun*1.05+mix(vec3(.30,.31,.36),vec3(.55,.60,.70),n.y*.5+.5)+vec3(.30,.29,.28)*max(dot(n,normalize(vec3(.2,.3,1.))),0.)*.6)+uCol*uEm;
+ float fog=clamp((length(wp-uEye)-6.)/22.,0.,1.);c=mix(c,vec3(.80,.84,.90),fog*.6);
+ o=vec4(pow(c,vec3(1./1.1)),1.);}`;
+const SVS=`#version 300 es
+in vec3 p;uniform mat4 uM,uL;void main(){gl_Position=uL*uM*vec4(p,1.);}`;
+const SFS=`#version 300 es
+precision highp float;out vec4 o;void main(){o=vec4(1.);}`;
+const P=prog(VS,FS),SP=prog(SVS,SFS);
+const U={};for(const n of['uM','uV','uP','uL','uCol','uEye','uSun','uEm','uSh'])U[n]=gl.getUniformLocation(P,n);
+const SU={uM:gl.getUniformLocation(SP,'uM'),uL:gl.getUniformLocation(SP,'uL')};
+// shadow fbo
+const SM=2048;const st=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,st);gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT24,SM,SM,0,gl.DEPTH_COMPONENT,gl.UNSIGNED_INT,null);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,st,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+function mesh(arr){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.DYNAMIC_DRAW);return{b,n:arr.length/3}}
+function upd(m,arr){gl.bindBuffer(gl.ARRAY_BUFFER,m.b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.DYNAMIC_DRAW);m.n=arr.length/3}
+// ---------- scene graph ----------
+class N{constructor(m,col,em=0,cast=true){this.m=m;this.col=col?hex(col):null;this.em=em;this.cast=cast;this.k=[];this.L=M.id();this.vis=true}
+ add(c){this.k.push(c);return c}}
+const root=new N(null);
+function node(parent,m,col,L,em=0,cast=true){const n=new N(m?mesh(m):null,col,em,cast);n.L=L||M.id();parent.add(n);return n}
+const T=(x,y,z)=>M.tr(x,y,z);
+const R=rng(7);
+// ---------- warehouse ----------
+const wh=node(root,null,null);
+node(wh,box(16,.05,14),'#b9b6ad',T(0,-.025,-3));                     // concrete floor
+for(let i=-7;i<=7;i++)node(wh,box(.02,.003,14),'#a9a69d',T(i*1.0,.002,-3),0,false); // floor joints
+node(wh,box(16,7,.2),'#d9dde3',T(0,3.5,-9));                          // back wall
+node(wh,box(.2,7,14),'#cfd4db',T(-6,3.5,-3));node(wh,box(.2,7,14),'#cfd4db',T(6,3.5,-3));
+node(wh,box(16,.2,14),'#e6e8ec',T(0,7,-3),0,false);
+// big windows on back wall (bright)
+for(let i=-2;i<=2;i++){node(wh,box(1.6,1.0,.05),'#eaf3ff',T(i*2.6,5.3,-8.88),1.1,false);
+ node(wh,box(.05,1.0,.06),'#7b8794',T(i*2.6,5.3,-8.85),0,false)}
+// yellow safety line + rolling door
+node(wh,box(16,.004,.08),'#f2c230',T(0,.004,-3.2),0,false);
+node(wh,box(3,3.2,.06),'#8fa0b2',T(3.8,1.6,-8.85),0,false);
+for(let k=0;k<12;k++)node(wh,box(3,.02,.07),'#7a8a9c',T(3.8,.2+k*.26,-8.83),0,false);
+// pallet racks with boxes
+const kraft=['#c9955b','#bf8a50','#d4a46a','#b88247'];
+function rack(x,z,w){const g=node(wh,null,null);g.L=T(x,0,z);
+ for(const sx of[-w/2,w/2])for(const sz of[-.5,.5])node(g,box(.08,4.2,.08),'#2f5f9e',T(sx,2.1,sz));
+ for(const h of[.15,1.45,2.75])for(const sz of[-.5,.5])node(g,box(w,.1,.08),'#e2702a',T(0,h,sz));
+ for(const h of[.2,1.5,2.8]){let cx=-w/2+.1;
+  while(cx<w/2-.4){const pw=1.1;node(g,box(pw,.12,.95),'#a87a4a',T(cx+pw/2,h+.12,0));
+   let bx=cx+.08;while(bx<cx+pw-.25){const bw=.3+R()*.15,bh=.25+R()*.3,bd=.35+R()*.2;
+    const nl=1+Math.floor(R()*2.2);for(let l=0;l<nl;l++){node(g,box(bw,bh,bd),kraft[Math.floor(R()*4)],M.mul(T(bx+bw/2,h+.18+bh/2+l*bh,(R()-.5)*.3),M.ry((R()-.5)*.12)));
+     if(R()<.35)node(g,box(.04,bh+.002,bd+.002),R()<.5?'#0F7D72':'#E7AC4D',T(bx+bw/2,h+.18+bh/2+l*bh,(R()-.5)*.3),0,false)}
+    bx+=bw+.04}
+   cx+=pw+.1}}
+ return g}
+rack(-3.4,-6.2,4.2);rack(1.6,-6.2,4.2);rack(-5.2,-3.6,.01).vis=false;
+// side rack (left) angled
+const sr=rack(-4.6,-3.4,3.4);sr.L=M.mul(T(-4.7,0,-3.4),M.ry(Math.PI/2));
+// shrink-wrapped pallet stacks on floor
+function pal(x,z,h,r){const g=node(wh,null,null);g.L=M.mul(T(x,0,z),M.ry(r));
+ node(g,box(1.1,.13,1.0),'#a87a4a',T(0,.065,0));
+ node(g,box(1.0,h,.92),'#c79358',T(0,.13+h/2,0));
+ node(g,box(1.03,h*.96,.95),'#e9eef5',T(0,.13+h*.5,0),0.15,false);
+ node(g,box(1.04,.06,.96),'#0F7D72',T(0,.13+h*.7,0),0,false);return g}
+// (wrap drawn semi-opaque look: put real boxes visible on top)
+pal(2.9,-3.2,1.1,.2);pal(-2.6,-2.6,.8,-.25);pal(3.6,-4.4,1.5,0);
+// pallet jack
+const pj=node(wh,null,null);pj.L=M.mul(T(1.7,0,-2.5),M.ry(-.6));
+node(pj,box(.55,.08,1.1),'#e2702a',T(0,.1,0));node(pj,box(.12,.9,.12),'#e2702a',M.mul(T(0,.55,-.55),M.rx(-.25)));node(pj,box(.4,.05,.05),'#222222',T(0,1.0,-.68));
+// ---------- packing table ----------
+const TY=1.0;
+const desk=node(root,null,null);
+node(desk,box(1.95,.05,.95),'#d9c3a0',T(0,TY-.025,-.2));
+node(desk,box(1.95,.04,.95),'#7d8796',T(0,TY-.07,-.2));
+for(const x of[-.92,.92])for(const z of[-.62,.22])node(desk,box(.05,TY-.08,.05),'#7d8796',T(x,(TY-.08)/2,z));
+node(desk,box(1.85,.04,.85),'#7d8796',T(0,.2,-.2));
+// open cardboard box with flaps
+const ob=node(desk,null,null);ob.L=M.mul(T(.86,TY+.13,-.62),M.ry(-.5));
+node(ob,box(.36,.26,.3),'#c9955b');
+node(ob,box(.34,.01,.28),'#8a6036',T(0,.1,0),0,false);
+node(ob,box(.36,.01,.14),'#bf8a50',M.mul(T(0,.13,.2),M.rx(.9)));node(ob,box(.36,.01,.14),'#bf8a50',M.mul(T(0,.13,-.2),M.rx(-.9)));
+// tape dispenser
+const td=node(desk,null,null);td.L=M.mul(T(-.7,TY+.04,-.38),M.ry(.5));
+node(td,box(.22,.04,.07),'#E7AC4D');node(td,cyl(.05,.05,.05,10),'#cfc9b8',M.mul(T(-.02,.07,0),M.rx(Math.PI/2)));node(td,box(.03,.12,.06),'#E7AC4D',T(.1,.05,0));
+// clipboard
+node(desk,box(.2,.008,.28),'#5a3c22',M.mul(T(.2,TY+.004,-.05),M.ry(.2)));node(desk,box(.17,.004,.22),'#f6f6f2',M.mul(T(.2,TY+.01,-.05),M.ry(.2)),0,false);
+// ---------- characters ----------
+const CY=.24;
+function character(o){
+ const c=node(root,null,null);c.base=[o.x,CY,-.64];c.L=T(...c.base);
+ const yaw=node(c,null,null);c.yaw=yaw;
+ const body=node(yaw,null,null);
+ node(body,cyl(o.shTop,o.shBot,.36,6,true,Math.PI/6),o.torso,M.mul(T(0,.95,0),M.sc(1,1,.72)));
+ node(body,cyl(o.shBot*.95,o.shBot*.9,.5,6,true,Math.PI/6),o.legs,M.mul(T(0,.55,0),M.sc(1,1,.7)));
+ if(o.shirt)node(body,cyl(.0,.06,.16,3,true,Math.PI/2),o.shirt,M.mul(T(0,1.05,.115),M.mul(M.rx(Math.PI),M.sc(1,1,.25))),0);
+ if(o.stripes)for(let i=-3;i<=3;i++){if(i==0)continue;node(body,box(.006,.34,.01),'#55607e',M.mul(T(i*.035,.95,.118),M.rz(i*.035)))}
+ node(body,cyl(.05,.055,.08,6),o.neck,T(0,1.15,0));
+ const armL=node(yaw,null,null),armR=node(yaw,null,null);
+ for(const[a,s]of[[armL,-1],[armR,1]]){a.s=s;a.L=T(s*.17,1.06,.0);
+  node(a,box(.08,.22,.09),o.torso,M.mul(T(0,-.1,0),M.rz(s*.12)));
+  const fore=node(a,null,null);fore.L=T(s*.01,-.2,.0);a.fore=fore;
+  node(fore,box(.075,.075,.26),o.torso,T(0,0,.13));
+  node(fore,ico(.042,1,.2,o.seed+s),o.skin,T(0,0,.28))}
+ c.armL=armL;c.armR=armR;
+ const head=node(yaw,null,null);c.head=head;c.headBase=[0,1.33,0];
+ node(head,ico(.16,1,.16,o.seed),o.skin,M.sc(...o.hs));
+ node(head,box(.035,.06,.03),o.skin2,T(-.155*o.hs[0],0,0));node(head,box(.035,.06,.03),o.skin2,T(.155*o.hs[0],0,0));
+ node(head,box(.035,.045,.045),o.skin2,T(0,-.01,.16*o.hs[2]));
+ c.eyes=[];for(const s of[-1,1]){const e=node(head,null,null);e.L=T(s*.06,.035,.145*o.hs[2]);e.p=[s*.06,.035,.145*o.hs[2]];
+  node(e,box(.032,.048,.012),'#14121a',M.id(),0,false);node(e,box(.011,.013,.005),'#ffffff',T(.007,.012,.008),1.2,false);c.eyes.push(e)}
+ for(const s of[-1,1])node(head,box(.05,.012,.012),o.brow,M.mul(T(s*.06,.085,.15*o.hs[2]),M.rz(s*-.12)));
+ const mouth=node(head,null,null);c.mz=o.mz;mouth.L=T(0,-.075,o.mz);node(mouth,box(.06,.02,.012),'#3a1a1a',M.id(),0,false);c.mouth=mouth;
+ o.hair(head);
+ return c}
+const D=character({x:-.34,seed:11,skin:'#efc8a8',skin2:'#e2b393',neck:'#e2b393',torso:'#1d2747',legs:'#1a2238',shirt:'#f2f2f0',stripes:true,
+ shTop:.13,shBot:.16,hs:[.86,1.12,.92],brow:'#5a3a22',mz:.148*.92,
+ hair(h){node(h,ico(.165,1,.12,21),'#5c3b22',M.mul(T(.0,.085,-.02),M.sc(.9,.62,1.0)));
+  node(h,box(.2,.06,.12),'#6b4428',M.mul(T(.03,.14,.07),M.mul(M.rz(-.28),M.rx(.25))));
+  node(h,box(.11,.05,.1),'#5c3b22',M.mul(T(-.1,.12,.06),M.rz(.5)));
+  node(h,box(.03,.12,.12),'#5c3b22',T(-.138,.04,-.02));node(h,box(.03,.12,.12),'#5c3b22',T(.138,.04,-.02))}});
+const A=character({x:.36,seed:5,skin:'#eab89a',skin2:'#dda686',neck:'#dda686',torso:'#b0773f',legs:'#2e3a52',shirt:null,
+ shTop:.16,shBot:.18,hs:[1.04,.98,1.0],brow:'#9a4e22',mz:.172,
+ hair(h){// full short hair: volume on top, slight quiff, tight sides
+  node(h,ico(.172,1,.08,9),'#7a4524',M.mul(T(0,.075,-.02),M.sc(1.0,.68,1.0)));
+  node(h,ico(.12,1,.25,13),'#86502a',M.mul(T(0,.155,.03),M.sc(1.1,.55,1.0)));
+  node(h,box(.17,.06,.08),'#86502a',M.mul(T(0,.15,.11),M.rx(-.35)));
+  node(h,box(.025,.09,.14),'#7e4422',T(-.168,.03,-.02));node(h,box(.025,.09,.14),'#7e4422',T(.168,.03,-.02));
+  node(h,ico(.165,1,.18,4),'#b8622c',M.mul(T(0,-.075,.012),M.sc(1.02,.62,1.0)));
+  node(h,box(.11,.025,.02),'#a8582a',T(0,-.045,.162))}});
+// Time Timer
+const tt=node(root,null,null);tt.L=M.mul(T(-.24,TY+.09,-.04),M.ry(.3));
+node(tt,box(.18,.18,.045),'#151515');
+node(tt,box(.155,.155,.004),'#f4f4f2',T(0,0,.0245),.15);
+for(let i=0;i<12;i++){const a=i/12*Math.PI*2;node(tt,box(.004,.012,.002),'#222222',M.mul(T(Math.sin(a)*.068,Math.cos(a)*.068,.027),M.rz(-a)),0,false)}
+const disk=node(tt,null,'#d42a20',T(0,0,.0275),.25,false);disk.m=mesh(sector(.062,Math.PI*2*.7,48));disk.col=hex('#d42a20');
+node(tt,cyl(.008,.008,.012,6),'#222222',M.mul(T(0,0,.03),M.rx(Math.PI/2)),0,false);
+node(tt,box(.05,.012,.012),'#222222',T(0,.098,0));
+// ---------- draw ----------
+function walk(n,parentM,fn){if(!n.vis)return;const W=M.mul(parentM,n.L);if(n.m)fn(n,W);for(const k of n.k)walk(k,W,fn)}
+const SUN=[.55,.85,.45];
+const lightV=M.look([SUN[0]*8,SUN[1]*8,SUN[2]*8-1],[0,0,-1],[0,1,0]);const LM=M.mul(M.ortho(-6,6,-6,6,1,20),lightV);
+function draw(eye,target,fov){
+ gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.viewport(0,0,SM,SM);gl.clear(gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);gl.useProgram(SP);
+ gl.uniformMatrix4fv(SU.uL,false,LM);const loc=gl.getAttribLocation(SP,'p');
+ walk(root,M.id(),(n,W)=>{if(!n.cast)return;gl.uniformMatrix4fv(SU.uM,false,W);gl.bindBuffer(gl.ARRAY_BUFFER,n.m.b);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);gl.drawArrays(gl.TRIANGLES,0,n.m.n)});
+ gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,1080,1920);gl.clearColor(.85,.88,.92,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+ gl.useProgram(P);const V=M.look(eye,target,[0,1,0]),Pm=M.persp(fov,1080/1920,.05,60);
+ gl.uniformMatrix4fv(U.uV,false,V);gl.uniformMatrix4fv(U.uP,false,Pm);gl.uniformMatrix4fv(U.uL,false,LM);
+ gl.uniform3fv(U.uEye,eye);gl.uniform3fv(U.uSun,SUN);
+ gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,st);gl.uniform1i(U.uSh,0);const l2=gl.getAttribLocation(P,'p');
+ walk(root,M.id(),(n,W)=>{gl.uniformMatrix4fv(U.uM,false,W);gl.uniform3fv(U.uCol,n.col);gl.uniform1f(U.uEm,n.em);gl.bindBuffer(gl.ARRAY_BUFFER,n.m.b);gl.enableVertexAttribArray(l2);gl.vertexAttribPointer(l2,3,gl.FLOAT,false,0,0);gl.drawArrays(gl.TRIANGLES,0,n.m.n)});
+}
+// ---------- timeline ----------
+const LINES=[
+ {who:'A',a:1.15,b:2.2,t:'Mais enfin…'},
+ {who:'A',a:2.2,b:4.45,t:"Comment ça marche, l'objet que tu utilises ?"},
+ {who:'D',a:4.9,b:6.6,t:"Bah, c'est facile !"},
+ {who:'D',a:6.78,b:9.6,t:"Sur notre site, il y a des guides d'utilisation…"},
+ {who:'D',a:9.68,b:11.5,t:'… dans plusieurs langues.'},
+ {who:'D',a:11.74,b:15.2,t:'Chacun retrouve le sien, dans la langue qui lui convient le mieux.'},
+ {who:'D',a:15.54,b:18.1,t:"Chez Andamare, ce n'est pas aux gens de s'adapter."},
+ {who:'D',a:18.2,b:20.55,t:"C'est nous qui nous adaptons à eux."},
+];
+const ENVA=[]; // enveloppe de voix (1 valeur par image) si on a un enregistrement
+const ENV=[];
+const ease=x=>x<0?0:x>1?1:x*x*(3-2*x);
+const lerp=(a,b,k)=>a+(b-a)*k,lerp3=(a,b,k)=>a.map((v,i)=>lerp(v,b[i],k));
+const Y=CY;
+const CAM=[ // t, eye, target, fov
+ [0,[.75,1.62+Y,1.95],[.3,1.18+Y,-.55],.6],
+ [4.4,[.6,1.56+Y,1.6],[.33,1.22+Y,-.55],.58],
+ [5.0,[-.6,1.56+Y,1.7],[-.28,1.2+Y,-.45],.6],
+ [11.6,[-.52,1.5+Y,1.45],[-.28,1.2+Y,-.45],.58],
+ [12.4,[.15,1.75+Y,3.0],[0,1.12+Y,-.5],.62],
+ [14.9,[-.1,1.7+Y,2.7],[0,1.14+Y,-.5],.62],
+ [15.5,[-.42,1.5+Y,1.65],[-.34,1.22+Y,-.55],.58],
+ [19.9,[-.38,1.48+Y,1.35],[-.34,1.24+Y,-.55],.56],
+ [21.2,[0,2.3+Y,3.6],[0,1.3+Y,-.8],.62],
+];
+function cam(t){let i=0;while(i<CAM.length-2&&t>CAM[i+1][0])i++;const A0=CAM[i],B0=CAM[i+1];const k=ease((t-A0[0])/(B0[0]-A0[0]));
+ return[lerp3(A0[1],B0[1],k),lerp3(A0[2],B0[2],k),lerp(A0[3],B0[3],k)]}
+// gaze keys: value = yaw target for head (+ = toward screen right). 'cam'=0, toward other = sign
+// D is at left: looking at A = +; A at right: looking at D = -
+const GAZE={
+ D:[[0,0.05],[0.6,.55],[4.8,.55],[5.2,.6],[8.2,.6],[8.8,0.0],[11.6,0.0],[12.0,.55],[14.6,.5],[15.0,0],[20,0]],
+ A:[[0,0],[0.3,-.55],[2.2,-.55],[2.6,0],[3.4,-.6],[14.8,-.6],[15.3,-.35],[17.6,-.35],[18.0,0],[20,0]],
+};
+function key(arr,t){if(t<=arr[0][0])return arr[0][1];for(let i=0;i<arr.length-1;i++){const[a,va]=arr[i],[b,vb]=arr[i+1];if(t<=b)return lerp(va,vb,ease((t-a)/(b-a)))}return arr[arr.length-1][1]}
+function speaking(who,t){for(const l of LINES)if(l.who===who&&t>=l.a&&t<=l.b-.15)return l;return null}
+function mouthOpen(t,seed){return Math.max(0,Math.sin(t*17+seed)*.5+Math.sin(t*29.3+seed*2)*.35+.25)}
+function blink(t,off){const p=(t+off)%3.7;return p<.12?Math.max(.1,Math.abs(p-.06)/.06):1}
+window.renderAt=function(t){
+ for(const[ch,w,off]of[[D,'D',0],[A,'A',1.3]]){
+  const sp=speaking(w,t);const E=w=='D'?ENV:ENVA;const mo=E.length?(E[Math.round(t*30)]||0):(sp?mouthOpen(t,off*3):0);ch.mouth.L=M.mul(T(0,w=='A'?-.072:-.075,ch.mz),M.sc(1-mo*.25,1+mo*2.2,1));
+  const g=key(GAZE[w],t);
+  const listen=(!sp&&speaking(w=='A'?'D':'A',t))?1:0;
+  const nod=listen?Math.sin(t*3.4+off)*.06:0;const bob=sp?Math.sin(t*6.5+off)*.025:0;
+  ch.yaw.L=M.ry(g*.45+Math.sin(t*.6+off)*.03);
+  ch.head.L=M.mul(T(...ch.headBase),M.mul(M.ry(g*.75),M.mul(M.rx(nod+bob),M.rz(Math.sin(t*.5+off)*.035+(sp?Math.sin(t*2.1)*.03:0)))));
+  for(const e of ch.eyes){const b=blink(t,off);e.L=[1,0,0,0,0,b,0,0,0,0,1,0,e.p[0],e.p[1],e.p[2],1]}
+ }
+ // Andrew: scratches head on "mais enfin", then open-palm shrug on the question
+ const sc=ease((t-1.1)/.35)*(1-ease((t-2.2)/.35));
+ A.armR.L=M.mul(T(.17,1.06,0),M.mul(M.rx(-sc*2.3),M.rz(sc*.25)));A.armR.fore.L=M.mul(T(.01,-.2,0),M.mul(M.rx(-sc*1.2),M.ry(-sc*.9)));
+ const sh=ease((t-2.6)/.35)*(1-ease((t-4.4)/.4));
+ A.armL.L=M.mul(T(-.17,1.06,0),M.rz(-sh*.45));A.armL.fore.L=M.mul(T(-.01,-.2,0),M.ry(sh*.6));
+ if(sh>0){A.armR.L=M.mul(T(.17,1.06,0),M.rz(sh*.45));A.armR.fore.L=M.mul(T(.01,-.2,0),M.ry(-sh*.6))}
+ // Damien: points at the timer, then open hand toward camera on the final lines
+ const g=ease((t-5.0)/.5)*(1-ease((t-11.5)/.6));
+ const op=ease((t-15.2)/.5)*(1-ease((t-20.2)/.5));
+ D.armL.L=M.mul(T(-.17,1.06,0),M.mul(M.rx(-g*.35-op*.25),M.rz(-op*.25)));D.armL.fore.L=M.mul(T(-.01,-.2,0),M.mul(M.ry(g*.5-op*.55),M.rx(-g*.25-op*.15)));
+ D.armR.L=M.mul(T(.17,1.06,0),M.mul(M.rx(-op*.2),M.rz(op*.25)));D.armR.fore.L=M.mul(T(.01,-.2,0),M.mul(M.ry(op*.55),M.rx(-op*.1)));
+ const frac=.72-Math.max(0,t-5.4)*.018;upd(disk.m,sector(.062,Math.PI*2*Math.max(.05,frac),48));
+ const[c0,c1,f]=cam(t);draw(c0,c1,f);
+ const sub=document.getElementById('sub');let cur=null;for(const l of LINES)if(t>=l.a&&t<l.b)cur=l;
+ if(cur){const k=Math.min(1,(t-cur.a)/.15,(cur.b-t)/.15);sub.style.opacity=k;
+  document.getElementById('who').textContent=cur.who=='A'?'Andrew':'Damien';document.getElementById('who').style.color=cur.who=='A'?'#E7AC4D':'#7fd6c9';
+  document.getElementById('txt').textContent=cur.t}else sub.style.opacity=0;
+ const cap=document.getElementById('cap');const ck=ease((t-5.3)/.3)*(1-ease((t-10.8)/.3));cap.style.opacity=ck;cap.style.transform=`translateX(-50%) translateY(${(1-ck)*14}px)`;
+ const end=document.getElementById('end');const ek=ease((t-20.7)/.6);end.style.opacity=ek;
+ document.getElementById('msg').style.opacity=ease((t-20.9)/.4);
+ const lg=document.getElementById('logo');const lk=ease((t-21.6)/.5);lg.style.transform=`scale(${.6+lk*.4})`;lg.style.opacity=lk;
+ for(const el of end.querySelectorAll('.name,.slo,.url'))el.style.opacity=ease((t-22.1)/.5);
+};
+window.renderAt(0);
+</script></body></html>

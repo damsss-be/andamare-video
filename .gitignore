@@ -1,0 +1,23 @@
+# Jamais dans le dépôt : vidéos, matière, archives, clés
+*.mp4
+*.mov
+*.webm
+*.wav
+*.mp3
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.hdr
+*.ttf
+*.otf
+*.gltf
+*.bin
+assets/
+node_modules/
+travail/
+Cle*.txt
+*.key
+.env
+__pycache__/
+!studio/exemples/*
